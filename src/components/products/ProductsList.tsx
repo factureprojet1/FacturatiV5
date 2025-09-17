@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useData } from '../../contexts/DataContext';
+import { useStock } from '../../contexts/StockContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import AddProductModal from './AddProductModal';
 import EditProductModal from './EditProductModal';
@@ -10,77 +11,26 @@ import StockOverviewWidget from './StockOverviewWidget';
 import StockAlertsWidget from './StockAlertsWidget';
 
 
+
 export default function ProductsList() {
   const { t } = useLanguage();
-  const { products, deleteProduct, invoices, stockMovements } = useData();
+  const { products, deleteProduct, invoices } = useData();
+  const { stockMovements, getProductStockSummary, calculateCurrentStock } = useStock(); // ✅ correction ici
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<string | null>(null);
   const [adjustingStock, setAdjustingStock] = useState<string | null>(null);
   const [viewingHistory, setViewingHistory] = useState<string | null>(null);
 
-  // Calculer le stock restant selon la formule : Stock Initial + Rectifications - Ventes
-  const calculateCurrentStock = (productId: string) => {
-    const product = products.find(p => p.id === productId);
-    if (!product) return 0;
-
-    // Stock initial
-    const initialStock = product.initialStock || 0;
-
-    // Total des rectifications (ajustements)
-    const adjustments = stockMovements
-      .filter(m => m.productId === productId && m.type === 'adjustment')
-      .reduce((sum, m) => sum + m.quantity, 0);
-
-    // Total des ventes (quantités vendues dans les factures)
-    const sales = invoices.reduce((sum, invoice) => {
-      return sum + invoice.items
-        .filter(item => item.description === product.name)
-        .reduce((itemSum, item) => itemSum + item.quantity, 0);
-    }, 0);
-
-    return initialStock + adjustments - sales;
-  };
-
-  // Obtenir le résumé du stock d'un produit
-  const getProductStockSummary = (productId: string) => {
-    const product = products.find(p => p.id === productId);
-    if (!product) return null;
-
-    const productMovements = stockMovements.filter(m => m.productId === productId);
-    
-    // Total des ajustements
-    const totalAdjustments = productMovements
-      .filter(m => m.type === 'adjustment')
-      .reduce((sum, m) => sum + m.quantity, 0);
-
-    // Total des ventes
-    const totalSales = invoices.reduce((sum, invoice) => {
-      return sum + invoice.items
-        .filter(item => item.description === product.name)
-        .reduce((itemSum, item) => itemSum + item.quantity, 0);
-    }, 0);
-
-    const currentStock = calculateCurrentStock(productId);
-    const lastMovement = productMovements.sort((a, b) => 
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    )[0];
-
-    return {
-      initialStock: product.initialStock || 0,
-      totalSales,
-      totalAdjustments,
-      currentStock,
-      lastMovementDate: lastMovement?.date || product.createdAt
-    };
-  };
   const getProductStats = (productId: string) => {
     const product = products.find(p => p.id === productId);
     if (!product) return { remainingStock: 0, ordersCount: 0, totalOrdered: 0 };
 
-    // Calculer selon la nouvelle formule
-    const remainingStock = calculateCurrentStock(productId);
-    
+    // Utiliser le stock calculé depuis le contexte Stock
+    const currentStock = calculateCurrentStock(productId);
+    const remainingStock = currentStock;
+
+    // Calculate total ordered quantity from all invoices (pour compatibilité)
     let totalOrdered = 0;
     let ordersCount = 0;
     const ordersSet = new Set();
@@ -195,7 +145,7 @@ export default function ProductsList() {
             </div>
             <div>
               <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                {stockMovements?.filter(m => m.type === 'adjustment').length || 0}
+                {stockMovements.filter(m => m.type === 'adjustment').length}
               </p>
               <p className="text-sm text-gray-600 dark:text-gray-400">Rectifications</p>
             </div>
@@ -209,7 +159,7 @@ export default function ProductsList() {
             </div>
             <div>
               <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                {invoices.length}
+                {stockMovements.filter(m => m.type === 'sale').length}
               </p>
               <p className="text-sm text-gray-600 dark:text-gray-400">Ventes</p>
             </div>
@@ -273,10 +223,10 @@ export default function ProductsList() {
                  
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm font-medium text-gray-900 dark:text-white">
-                      {(product.initialStock || 0).toFixed(3)} {product.unit || 'unité'}
+                      {product.stock.toFixed(3)} {product.unit || 'unité'}
                     </div>
                     <div className="text-xs text-gray-500 dark:text-gray-400">
-                      Min: {(product.minStock || 0).toFixed(3)} {product.unit || 'unité'}
+                      Min: {product.minStock.toFixed(3)} {product.unit || 'unité'}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
